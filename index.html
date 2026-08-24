@@ -1,0 +1,1035 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FIU_IRM field editor</title>
+<style>
+  :root{
+    --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    --glass:rgba(12,12,12,.72);
+    --line:rgba(255,255,255,.16);
+    --edge:rgba(255,255,255,.28);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden;background:#000;color:#e6e6e6;font-family:var(--sans)}
+  #app{display:flex;flex-direction:column;height:100%}
+
+  #topbar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);flex:0 0 auto}
+  #topbar .title{font-size:13px;font-weight:600;margin-right:8px;white-space:nowrap}
+  #search{width:200px;padding:5px 11px;font:12px var(--mono);border:1px solid var(--edge);background:rgba(255,255,255,.05);color:#ddd;border-radius:9px}
+  #searchCount{font:11px var(--mono);color:#888;min-width:70px}
+  #topbar .spacer{flex:1}
+  button{font:12px var(--sans);padding:5px 12px;border:1px solid var(--edge);background:rgba(255,255,255,.05);color:#ddd;cursor:pointer;border-radius:9px}
+  button:hover{background:rgba(255,255,255,.12)}
+  button:disabled{border-color:rgba(255,255,255,.1);color:#444;cursor:default;background:transparent}
+  button.danger{border-color:rgba(255,80,80,.5);color:#ff6a6a}
+  button.danger:hover{background:rgba(255,80,80,.1)}
+
+  #main{display:flex;flex:1 1 auto;min-height:0;position:relative}
+  #canvasWrap{flex:1 1 auto;position:relative;min-width:0}
+  #canvas{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:crosshair}
+  #canvas.panning{cursor:grab}
+  #canvas.panning:active{cursor:grabbing}
+  #canvas.overdot{cursor:pointer}
+
+  #panel{position:absolute;top:12px;right:12px;bottom:12px;width:302px;overflow-y:auto;padding:14px;display:none;
+    background:var(--glass);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+    border:1px solid var(--line);border-radius:16px;z-index:26}
+  #panel.open{display:block}
+  #panel h2{font-size:13px;margin-bottom:10px;word-break:break-word}
+  #panel .field{margin-bottom:8px}
+  #panel label{display:block;font:10px var(--mono);color:#888;margin-bottom:2px}
+  #panel input,#panel textarea{width:100%;padding:5px 8px;font:12px var(--mono);border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.06);color:#ddd;border-radius:8px}
+  #panel textarea{resize:vertical;min-height:44px}
+  #panel .row2{display:flex;gap:8px}
+  #panel .row2 .field{flex:1}
+  #panel .actions{margin-top:14px;display:flex;gap:8px}
+
+  #statusbar{flex:0 0 auto;border-top:1px solid var(--line);padding:4px 12px;font:11px var(--mono);color:#999;display:flex;gap:16px;white-space:nowrap;overflow:hidden}
+  #statusbar .spacer{flex:1}
+
+  #notice{position:absolute;top:10px;left:50%;transform:translateX(-50%);background:rgba(38,30,4,.8);border:1px solid rgba(234,255,0,.35);
+    backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-radius:10px;
+    padding:6px 12px;font:12px var(--mono);color:#ddd;display:none;z-index:30;max-width:70%}
+  #notice.show{display:flex;gap:10px;align-items:center}
+  #notice .x{cursor:pointer;font-weight:700}
+
+  #tooltip{position:fixed;display:none;background:rgba(8,8,8,.85);border:1px solid rgba(255,255,255,.2);
+    backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-radius:11px;
+    padding:9px 11px;font:11px var(--mono);color:#ddd;z-index:40;pointer-events:none;max-width:380px}
+  #tooltip .k{color:#777;display:inline-block;min-width:110px}
+  #tooltip div{white-space:pre-wrap;word-break:break-word}
+
+  #dragBubble{position:absolute;display:none;background:#fff;color:#000;font:12px var(--mono);
+    padding:5px 10px;z-index:32;pointer-events:none;white-space:nowrap;transform:translate(-50%,-135%);text-align:center;
+    border-radius:10px}
+  #dragBubble .now{font-weight:700;font-size:13px}
+  #dragBubble .from{color:#555;font-size:10px;margin-top:1px}
+
+  #changes{position:absolute;top:12px;left:12px;bottom:12px;width:284px;background:var(--glass);
+    backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+    border:1px solid var(--line);border-radius:16px;
+    z-index:25;display:none;flex-direction:column;overflow:hidden}
+  #changes.open{display:flex}
+  #changes header{padding:11px 14px;border-bottom:1px solid var(--line);font:11px var(--mono);color:#999}
+  #changes header .cnt{color:#ddd}
+  #changesList{flex:1;overflow-y:auto}
+  #changes .item{padding:8px 14px;border-bottom:1px solid rgba(255,255,255,.06);cursor:pointer;font:11px var(--mono);color:#bbb}
+  #changes .item:hover{background:rgba(255,255,255,.07)}
+  #changes .item .tool{color:#ddd;font-family:var(--sans);font-size:12px;margin-bottom:2px}
+  #changes .item.gone{cursor:default;color:#777}
+  #changes footer{padding:11px 14px;border-top:1px solid var(--line)}
+
+  #welcome{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:#000;z-index:20}
+  #welcome.show{display:flex}
+  #welcome .box{border:1px solid rgba(255,255,255,.2);border-radius:18px;padding:28px;text-align:center;background:rgba(255,255,255,.03)}
+  #welcome h1{font-size:15px;margin-bottom:8px}
+  #welcome p{font:12px var(--mono);color:#888;margin-bottom:16px}
+
+  #toast{position:absolute;bottom:34px;left:50%;transform:translateX(-50%);display:none;z-index:35;
+    background:rgba(20,20,20,.85);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+    border:1px solid var(--edge);border-radius:999px;color:#ddd;font:12px var(--mono);padding:6px 14px;max-width:80%}
+  #toast.err{color:#ff6a6a;border-color:rgba(255,80,80,.5)}
+  #toast.show{display:flex;gap:10px;align-items:center}
+  #toast .x{cursor:pointer;font-weight:700}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="topbar">
+    <span class="title">FIU_IRM</span>
+    <input id="search" type="text" placeholder="search tool" autocomplete="off" spellcheck="false">
+    <span id="searchCount"></span>
+    <span class="spacer"></span>
+    <button id="btnChanges">Changes</button>
+    <button id="btnExport">Export CSV</button>
+  </div>
+  <div id="main">
+    <div id="canvasWrap">
+      <canvas id="canvas"></canvas>
+      <div id="notice"><span id="noticeText"></span><span class="x" id="noticeX">&times;</span></div>
+      <div id="welcome">
+        <div class="box">
+          <h1>FIU_IRM field editor</h1>
+          <p>load data/field.csv from the local folder</p>
+          <button id="btnOpenFile">open data/field.csv</button>
+        </div>
+      </div>
+      <div id="dragBubble"><div class="now"></div><div class="from"></div></div>
+      <aside id="changes">
+        <header>changes since <span id="baseStamp"></span> · <span class="cnt" id="baseCount"></span></header>
+        <div id="changesList"></div>
+        <footer><button id="btnRebase">start tracking from now</button></footer>
+      </aside>
+      <div id="toast"><span id="toastText"></span><span class="x" id="toastX">&times;</span></div>
+    </div>
+    <aside id="panel">
+      <h2 id="panelTitle"></h2>
+      <div id="panelFields"></div>
+      <div class="actions">
+        <button id="btnDelete" class="danger">Delete</button>
+        <button id="btnClosePanel">Close</button>
+      </div>
+    </aside>
+  </div>
+  <div id="statusbar">
+    <span id="stRows"></span>
+    <span id="stZoom"></span>
+    <span id="stCursor"></span>
+    <span class="spacer"></span>
+  </div>
+</div>
+
+<div id="tooltip"></div>
+<input id="fileInput" type="file" accept=".csv,text/csv" style="display:none">
+
+<script>
+'use strict';
+
+/* ---------- constants / state ---------- */
+
+const LS_AUTOSAVE = 'fiuirm.autosave';
+const LS_BASELINE = 'fiuirm.baseline';
+const BAND_COLORS = { 'Explicit':'#ff2ec4', 'Conditioned':'#eaff00', 'Inferential':'#c77dff' };
+const SEED = 'seed 260413';
+const DOT_R = 5;
+const FIELD_MIN = 0, FIELD_MAX = 10;   // the field's domain on both axes — nothing exists outside it
+
+let headers = [];            // column order from the CSV, mirrored on export
+let rows = [];               // [{_id, <col>:value,...}]
+let eol = '\r\n';
+let trailingEol = true;
+let nextId = 1;
+
+let selId = null;
+let hoverId = null;
+let dragState = null;        // {id, moved, vx, vy}  vx/vy raw data coords while dragging
+let springs = new Map();     // id -> {x,y,vx,vy}
+let spaceHeld = false;
+let panState = null;
+
+let history = [], hIndex = -1;
+let searchMatches = [], searchIndex = -1;
+let restoredFromAutosave = false;
+let nudgeFlash = null;       // {id, startX, startY, until} keeps the value bubble up after a move
+let baseline = null;         // {at, byId, tools} anchor the Changes panel diffs against
+
+const view = { k:60, ox:0, oy:0, k0:60 };
+let neighborCache = { k:0, rev:-1, dist:new Map() };
+let dataRev = 0;
+
+const $ = id => document.getElementById(id);
+const canvas = $('canvas'), ctx = canvas.getContext('2d');
+
+/* ---------- csv ---------- */
+
+function parseCSV(text){
+  const out = []; let row = [], field = '', inQ = false;
+  for (let i = 0; i < text.length; i++){
+    const c = text[i];
+    if (inQ){
+      if (c === '"'){ if (text[i+1] === '"'){ field += '"'; i++; } else inQ = false; }
+      else field += c;
+    } else if (c === '"') inQ = true;
+    else if (c === ',') { row.push(field); field = ''; }
+    else if (c === '\r') { /* handled at \n */ }
+    else if (c === '\n') { row.push(field); out.push(row); row = []; field = ''; }
+    else field += c;
+  }
+  if (field !== '' || row.length) { row.push(field); out.push(row); }
+  return out;
+}
+function csvField(v){
+  v = String(v == null ? '' : v);
+  return /[",\r\n]/.test(v) ? '"' + v.replace(/"/g,'""') + '"' : v;
+}
+function serializeCSV(){
+  const lines = [headers.map(csvField).join(',')];
+  for (const r of rows) lines.push(headers.map(h => csvField(r[h])).join(','));
+  return lines.join(eol) + (trailingEol ? eol : '');
+}
+function loadCSVText(text){
+  eol = text.includes('\r\n') ? '\r\n' : '\n';
+  trailingEol = text.endsWith('\n');
+  const grid = parseCSV(text).filter(r => !(r.length === 1 && r[0] === ''));
+  headers = grid[0];
+  rows = grid.slice(1).map(cells => {
+    const r = { _id: nextId++ };
+    headers.forEach((h, i) => r[h] = cells[i] == null ? '' : cells[i]);
+    return r;
+  });
+  dataRev++;
+}
+
+/* ---------- history ---------- */
+
+function snapshot(){ return JSON.stringify(rows); }
+function resetHistory(){ history = [snapshot()]; hIndex = 0; }
+function commitHistory(){
+  const s = snapshot();
+  if (s === history[hIndex]) return;
+  history = history.slice(0, hIndex + 1);
+  history.push(s);
+  if (history.length > 250) history.shift();
+  hIndex = history.length - 1;
+  afterMutation();
+}
+function restore(i){
+  hIndex = i;
+  rows = JSON.parse(history[i]);
+  dataRev++;
+  if (selId != null && !byId(selId)) closePanel();
+  else if (selId != null) fillPanel();
+  afterMutation(); draw();
+}
+function undo(){ if (hIndex > 0) restore(hIndex - 1); }
+function redo(){ if (hIndex < history.length - 1) restore(hIndex + 1); }
+
+let nudgeTimer = null;
+function commitHistorySoon(){
+  clearTimeout(nudgeTimer);
+  nudgeTimer = setTimeout(commitHistory, 400);
+}
+
+/* ---------- autosave ---------- */
+
+let autosaveTimer = null;
+function afterMutation(){
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(saveLocal, 500);
+  updateStatus();
+}
+function saveLocal(){
+  try {
+    localStorage.setItem(LS_AUTOSAVE, JSON.stringify({
+      headers, rows, eol, trailingEol, savedAt: new Date().toISOString()
+    }));
+  } catch(e){ toast('autosave failed: ' + e.message, true); }
+  renderChanges();
+}
+function readLocal(){
+  try { const s = localStorage.getItem(LS_AUTOSAVE); return s ? JSON.parse(s) : null; }
+  catch(e){ return null; }
+}
+function loadFromAutosave(a){
+  headers = a.headers; rows = a.rows; eol = a.eol || '\r\n';
+  trailingEol = a.trailingEol !== false;
+  nextId = rows.reduce((m,r) => Math.max(m, r._id || 0), 0) + 1;
+  dataRev++;
+}
+window.addEventListener('beforeunload', saveLocal);
+document.addEventListener('visibilitychange', () => { if (document.hidden) saveLocal(); });
+
+/* ---------- helpers ---------- */
+
+function byId(id){ return rows.find(r => r._id === id); }
+function isSeed(r){ return (r.Provenance || '').trim() === SEED; }
+function numXY(r){ return { x: parseFloat(r.X), y: parseFloat(r.Y) }; }
+function snap(v, step){ return Math.round(v / step) * step; }
+function clampField(v){ return Math.min(FIELD_MAX, Math.max(FIELD_MIN, v)); }
+function fmt1(v){ return (Math.round(v * 10) / 10).toFixed(1).replace(/\.0$/, m => m); }
+function yymmdd(d){
+  d = d || new Date();
+  return String(d.getFullYear()).slice(2) +
+    String(d.getMonth()+1).padStart(2,'0') + String(d.getDate()).padStart(2,'0');
+}
+function shortStamp(iso){
+  const d = new Date(iso);
+  return yymmdd(d) + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+}
+
+/* ---------- view / transform ---------- */
+
+function dataToScreen(x, y){ return [view.ox + x * view.k, view.oy - y * view.k]; }
+function screenToData(sx, sy){ return [(sx - view.ox) / view.k, (view.oy - sy) / view.k]; }
+function visPos(r){
+  const s = springs.get(r._id);
+  if (s) return [s.x, s.y];
+  if (dragState && dragState.id === r._id) return [dragState.vx, dragState.vy];
+  const { x, y } = numXY(r);
+  return [x, y];
+}
+function fitView(){
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  view.k0 = Math.min(w / 11.6, h / 11.6);
+  view.k = view.k0;
+  const [cx, cy] = [5, 5];
+  view.ox = w / 2 - cx * view.k;
+  view.oy = h / 2 + cy * view.k;
+}
+function clampK(k){ return Math.min(6 * view.k0, Math.max(0.6 * view.k0, k)); }
+function zoomAt(sx, sy, factor){
+  const k2 = clampK(view.k * factor);
+  if (k2 === view.k) return;
+  view.ox = sx - (sx - view.ox) * (k2 / view.k);
+  view.oy = sy - (sy - view.oy) * (k2 / view.k);
+  view.k = k2;
+  updateStatus(); draw();
+}
+function centerOn(x, y){
+  view.ox = canvas.clientWidth / 2 - x * view.k;
+  view.oy = canvas.clientHeight / 2 + y * view.k;
+  draw();
+}
+
+/* ---------- rendering ---------- */
+
+const dotSprites = {};
+function dotSprite(color){
+  let s = dotSprites[color];
+  if (s) return s;
+  const dpr = window.devicePixelRatio || 1;
+  const pad = 14, size = (DOT_R + pad) * 2;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = size * dpr;
+  const c = cv.getContext('2d');
+  c.scale(dpr, dpr);
+  c.shadowColor = color; c.shadowBlur = 9;
+  c.fillStyle = color;
+  c.beginPath(); c.arc(size / 2, size / 2, DOT_R, 0, 7); c.fill();
+  c.beginPath(); c.arc(size / 2, size / 2, DOT_R, 0, 7); c.fill();
+  s = { canvas: cv, size };
+  dotSprites[color] = s;
+  return s;
+}
+function sizeCanvas(){
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)){
+    canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+function tickStep(){
+  for (const s of [0.1, 0.2, 0.5, 1, 2, 5]) if (s * view.k >= 56) return s;
+  return 5;
+}
+function draw(){
+  sizeCanvas();
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (!fitted && w > 0 && rows.length){ fitView(); fitted = true; updateStatus(); }
+  ctx.clearRect(0, 0, w, h);
+  if (!rows.length && !headers.length) return;
+
+  const step = tickStep();
+  const ticks = [];
+  for (let i = 0; FIELD_MIN + i * step <= FIELD_MAX + 1e-9; i++) ticks.push(FIELD_MIN + i * step);
+  const [fx0, fy1] = dataToScreen(FIELD_MIN, FIELD_MAX);
+  const [fx1, fy0] = dataToScreen(FIELD_MAX, FIELD_MIN);
+
+  // grid and axes stay inside the field; outside it there is nothing to draw
+  ctx.strokeStyle = '#1e1e1e'; ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (const x of ticks){
+    const [sx] = dataToScreen(x, 0);
+    ctx.moveTo(Math.round(sx) + .5, fy1); ctx.lineTo(Math.round(sx) + .5, fy0);
+  }
+  for (const y of ticks){
+    const sy = dataToScreen(0, y)[1];
+    ctx.moveTo(fx0, Math.round(sy) + .5); ctx.lineTo(fx1, Math.round(sy) + .5);
+  }
+  ctx.stroke();
+
+  ctx.strokeStyle = '#555';
+  ctx.strokeRect(Math.round(fx0) + .5, Math.round(fy1) + .5, Math.round(fx1 - fx0), Math.round(fy0 - fy1));
+
+  ctx.font = '10px ' + getComputedStyle(document.documentElement).getPropertyValue('--mono');
+  ctx.fillStyle = '#777';
+  const dec = step < 1 ? 1 : 0;
+  const labelY = Math.min(h - 14, Math.max(4, fy0 + 6));
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  for (const x of ticks){
+    const [sx] = dataToScreen(x, 0);
+    if (sx >= 0 && sx <= w) ctx.fillText(x.toFixed(dec), sx, labelY);
+  }
+  const labelX = Math.min(w - 6, Math.max(26, fx0 - 6));
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  for (const y of ticks){
+    const sy = dataToScreen(0, y)[1];
+    if (sy >= 0 && sy <= h) ctx.fillText(y.toFixed(dec), labelX, sy);
+  }
+
+  ctx.strokeStyle = 'rgba(255,255,255,.45)'; ctx.lineWidth = 1;
+  ctx.strokeRect(.5, .5, w - 1, h - 1);
+
+  const matchSet = new Set(searchMatches);
+  for (const r of rows){
+    const [x, y] = visPos(r);
+    if (isNaN(x) || isNaN(y)) continue;
+    const [sx, sy] = dataToScreen(x, y);
+    if (sx < -30 || sx > w + 30 || sy < -30 || sy > h + 30) continue;
+
+    if (matchSet.has(r._id)){
+      ctx.beginPath(); ctx.arc(sx, sy, DOT_R + 7, 0, 7);
+      ctx.fillStyle = 'rgba(255,255,255,.30)'; ctx.fill();
+    }
+    const sp = dotSprite(BAND_COLORS[(r.Band || '').trim()] || '#9aa0a6');
+    ctx.drawImage(sp.canvas, sx - sp.size / 2, sy - sp.size / 2, sp.size, sp.size);
+    if (isSeed(r)){
+      ctx.beginPath(); ctx.arc(sx, sy, DOT_R + 2.5, 0, 7);
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.8; ctx.stroke();
+    }
+    if (r._id === hoverId && r._id !== selId){
+      ctx.beginPath(); ctx.arc(sx, sy, DOT_R + 4, 0, 7);
+      ctx.strokeStyle = '#999'; ctx.lineWidth = 1; ctx.stroke();
+    }
+    if (r._id === selId){
+      ctx.beginPath(); ctx.arc(sx, sy, DOT_R + 5, 0, 7);
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.4; ctx.stroke();
+    }
+  }
+
+  drawLabels(w, h);
+
+  let bubbleRow = null, fromX = null, fromY = null;
+  if (dragState){ bubbleRow = byId(dragState.id); fromX = dragState.startX; fromY = dragState.startY; }
+  else if (nudgeFlash && performance.now() < nudgeFlash.until){
+    bubbleRow = byId(nudgeFlash.id); fromX = nudgeFlash.startX; fromY = nudgeFlash.startY;
+  }
+  const nb = $('dragBubble');
+  if (bubbleRow){
+    const [bx, by] = visPos(bubbleRow);
+    const [bsx, bsy] = dataToScreen(bx, by);
+    nb.style.display = 'block';
+    nb.style.left = bsx + 'px';
+    nb.style.top = (bsy - 12) + 'px';
+    const now = fmt1(parseFloat(bubbleRow.X)) + ', ' + fmt1(parseFloat(bubbleRow.Y));
+    const from = fmt1(parseFloat(fromX)) + ', ' + fmt1(parseFloat(fromY));
+    nb.children[0].textContent = now;
+    nb.children[1].textContent = from === now ? '' : 'from ' + from;
+  } else nb.style.display = 'none';
+
+  if (selId != null && (!bubbleRow || bubbleRow._id !== selId)){
+    const r = byId(selId);
+    if (r){
+      const [x, y] = visPos(r);
+      const [sx, sy] = dataToScreen(x, y);
+      ctx.font = '10px ' + getComputedStyle(document.documentElement).getPropertyValue('--mono');
+      ctx.fillStyle = '#ccc'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+      ctx.fillText(fmt1(parseFloat(r.X)) + ', ' + fmt1(parseFloat(r.Y)), sx + 10, sy - 10);
+    }
+  }
+}
+
+function neighborDists(){
+  if (neighborCache.rev === dataRev && Math.abs(neighborCache.k - view.k) < view.k * .02)
+    return neighborCache.dist;
+  const pts = rows.map(r => { const {x, y} = numXY(r); return { id: r._id, x, y }; })
+                  .filter(p => !isNaN(p.x));
+  const dist = new Map();
+  for (const p of pts){
+    let best = Infinity;
+    for (const q of pts){
+      if (q === p) continue;
+      const dx = (p.x - q.x) * view.k, dy = (p.y - q.y) * view.k;
+      const d = dx * dx + dy * dy;
+      if (d < best) best = d;
+    }
+    dist.set(p.id, Math.sqrt(best));
+  }
+  neighborCache = { k: view.k, rev: dataRev, dist };
+  return dist;
+}
+
+function drawLabels(w, h){
+  const dist = neighborDists();
+  const seeds = [], others = [];
+  for (const r of rows){
+    if (!(r.Tool || '').trim()) continue;
+    const [x, y] = visPos(r);
+    if (isNaN(x)) continue;
+    const [sx, sy] = dataToScreen(x, y);
+    if (sx < -60 || sx > w + 60 || sy < -30 || sy > h + 30) continue;
+    (isSeed(r) ? seeds : others).push({ r, sx, sy });
+  }
+  others.sort((a, b) => (dist.get(b.r._id) || 0) - (dist.get(a.r._id) || 0));
+  const cands = seeds.concat(others);
+
+  const placed = [];
+  const dots = rows.map(r => {
+    const [x, y] = visPos(r);
+    const [sx, sy] = dataToScreen(x, y);
+    return { sx, sy, rr: isSeed(r) ? DOT_R + 3.5 : DOT_R };
+  }).filter(d => d.sx > -30 && d.sx < w + 30 && d.sy > -30 && d.sy < h + 30);
+
+  const sans = getComputedStyle(document.documentElement).getPropertyValue('--sans');
+  for (const c of cands){
+    const bold = isSeed(c.r);
+    ctx.font = (bold ? '600 ' : '') + '11px ' + sans;
+    const tw = ctx.measureText(c.r.Tool).width;
+    const th = 12;
+    const offs = [
+      [9, -th/2], [-9 - tw, -th/2], [-tw/2, -th - 9], [-tw/2, 9],
+      [18, -th - 12], [18, 12], [-18 - tw, -th - 12], [-18 - tw, 12]
+    ];
+    let hit = null;
+    for (const [dx, dy] of offs){
+      const rect = { x: c.sx + dx - 2, y: c.sy + dy - 1, w: tw + 4, h: th + 2 };
+      if (rect.x < 2 || rect.y < 2 || rect.x + rect.w > w - 2 || rect.y + rect.h > h - 16) continue;
+      let ok = true;
+      for (const p of placed){
+        if (rect.x < p.x + p.w && p.x < rect.x + rect.w && rect.y < p.y + p.h && p.y < rect.y + rect.h){ ok = false; break; }
+      }
+      if (ok) for (const d of dots){
+        const nx = Math.max(rect.x, Math.min(d.sx, rect.x + rect.w));
+        const ny = Math.max(rect.y, Math.min(d.sy, rect.y + rect.h));
+        if ((d.sx - nx) ** 2 + (d.sy - ny) ** 2 < (d.rr + 1) ** 2){ ok = false; break; }
+      }
+      if (ok){ hit = { rect, dx, dy }; break; }
+    }
+    if (!hit) continue;
+    placed.push(hit.rect);
+    if (Math.abs(hit.dx) >= 18 || Math.abs(hit.dy) >= th + 9){
+      const lx = hit.dx > 0 ? hit.rect.x : hit.rect.x + hit.rect.w;
+      ctx.strokeStyle = 'rgba(255,255,255,.28)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(c.sx, c.sy); ctx.lineTo(lx, hit.rect.y + hit.rect.h / 2); ctx.stroke();
+    }
+    ctx.fillStyle = '#f2f2f2';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    ctx.fillText(c.r.Tool, hit.rect.x + 2, hit.rect.y + 1);
+  }
+}
+
+/* ---------- springs ---------- */
+
+let rafId = null, lastT = 0;
+function ensureRaf(){
+  if (!rafId){ lastT = performance.now(); rafId = requestAnimationFrame(springTick); }
+}
+function startSpring(id, fromX, fromY, vx0, vy0){
+  const r = byId(id); if (!r) return;
+  springs.set(id, { x: fromX, y: fromY, vx: vx0 || 0, vy: vy0 || 0 });
+  ensureRaf();
+}
+function springTick(t){
+  const dt = Math.min(0.032, (t - lastT) / 1000); lastT = t;
+  if (dragState){
+    const KC = 380, DC = 30;
+    dragState.cvx += (KC * (dragState.tx - dragState.vx) - DC * dragState.cvx) * dt;
+    dragState.cvy += (KC * (dragState.ty - dragState.vy) - DC * dragState.cvy) * dt;
+    dragState.vx += dragState.cvx * dt;
+    dragState.vy += dragState.cvy * dt;
+  }
+  const K = 160, D = 17;
+  for (const [id, s] of springs){
+    const r = byId(id);
+    if (!r){ springs.delete(id); continue; }
+    const { x: tx, y: ty } = numXY(r);
+    s.vx += (K * (tx - s.x) - D * s.vx) * dt;
+    s.vy += (K * (ty - s.y) - D * s.vy) * dt;
+    s.x += s.vx * dt; s.y += s.vy * dt;
+    if (Math.abs(tx - s.x) < .004 && Math.abs(ty - s.y) < .004 &&
+        Math.abs(s.vx) < .04 && Math.abs(s.vy) < .04) springs.delete(id);
+  }
+  draw();
+  rafId = (springs.size || dragState) ? requestAnimationFrame(springTick) : null;
+}
+
+/* ---------- hit test / pointer ---------- */
+
+function hitTest(sx, sy){
+  for (let i = rows.length - 1; i >= 0; i--){
+    const r = rows[i];
+    const [x, y] = visPos(r);
+    if (isNaN(x)) continue;
+    const [dx, dy] = dataToScreen(x, y);
+    if ((sx - dx) ** 2 + (sy - dy) ** 2 <= (DOT_R + 4) ** 2) return r;
+  }
+  return null;
+}
+
+canvas.addEventListener('pointerdown', e => {
+  if (e.button === 1 || spaceHeld){
+    panState = { sx: e.clientX, sy: e.clientY, ox: view.ox, oy: view.oy };
+    try { canvas.setPointerCapture(e.pointerId); } catch(err){}
+    return;
+  }
+  if (e.button !== 0) return;
+  const rect = canvas.getBoundingClientRect();
+  const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+  const r = hitTest(sx, sy);
+  if (r){
+    springs.delete(r._id);
+    select(r._id);
+    const { x, y } = numXY(r);
+    dragState = { id: r._id, moved: false, vx: x, vy: y, tx: x, ty: y, cvx: 0, cvy: 0,
+      startX: r.X, startY: r.Y,
+      offX: x - screenToData(sx, sy)[0], offY: y - screenToData(sx, sy)[1] };
+    ensureRaf();
+    try { canvas.setPointerCapture(e.pointerId); } catch(err){}
+  } else {
+    deselect();
+  }
+  draw();
+});
+
+canvas.addEventListener('pointermove', e => {
+  const rect = canvas.getBoundingClientRect();
+  const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+  const [dx, dy] = screenToData(sx, sy);
+  const inside = dx >= FIELD_MIN && dx <= FIELD_MAX && dy >= FIELD_MIN && dy <= FIELD_MAX;
+  $('stCursor').textContent = inside ? fmt1(dx) + ', ' + fmt1(dy) : '';
+
+  if (panState){
+    view.ox = panState.ox + (e.clientX - panState.sx);
+    view.oy = panState.oy + (e.clientY - panState.sy);
+    hideTooltip(); draw();
+    return;
+  }
+  if (dragState){
+    const r = byId(dragState.id);
+    if (r){
+      dragState.tx = dx + dragState.offX;
+      dragState.ty = dy + dragState.offY;
+      const nx = snap(clampField(dragState.tx), .1), ny = snap(clampField(dragState.ty), .1);
+      if (r.X !== String(fmt1(nx)) || r.Y !== String(fmt1(ny))) dragState.moved = true;
+      r.X = fmt1(nx); r.Y = fmt1(ny);
+      syncPanelXY(r);
+      hideTooltip(); draw();
+    }
+    return;
+  }
+  const h = hitTest(sx, sy);
+  const hid = h ? h._id : null;
+  canvas.classList.toggle('overdot', !!h && !spaceHeld);
+  if (hid !== hoverId){ hoverId = hid; draw(); }
+  if (h) showTooltip(h, e.clientX, e.clientY); else hideTooltip();
+});
+
+canvas.addEventListener('pointerup', e => {
+  if (panState){ panState = null; return; }
+  if (dragState){
+    const r = byId(dragState.id);
+    if (r && dragState.moved){
+      startSpring(r._id, dragState.vx, dragState.vy, dragState.cvx, dragState.cvy);
+      nudgeFlash = { id: r._id, startX: dragState.startX, startY: dragState.startY,
+        until: performance.now() + 700 };
+      setTimeout(draw, 750);
+      dragState = null;
+      commitHistory();
+    } else dragState = null;
+    draw();
+  }
+});
+
+canvas.addEventListener('dblclick', e => {
+  const rect = canvas.getBoundingClientRect();
+  const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+  if (hitTest(sx, sy)) return;
+  if (!headers.length) return;
+  const [x, y] = screenToData(sx, sy);
+  const r = { _id: nextId++ };
+  headers.forEach(h => r[h] = '');
+  r.X = fmt1(snap(clampField(x), .1)); r.Y = fmt1(snap(clampField(y), .1));
+  rows.push(r);
+  dataRev++;
+  select(r._id);
+  commitHistory();
+  draw();
+  const first = document.querySelector('#panelFields input');
+  if (first) first.focus();
+});
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+  if (e.ctrlKey){
+    zoomAt(sx, sy, Math.exp(-e.deltaY * 0.01));
+  } else if (e.deltaMode === 1 || (Math.abs(e.deltaY) >= 100 && e.deltaX === 0)){
+    zoomAt(sx, sy, Math.exp(-e.deltaY * 0.002));
+  } else {
+    view.ox -= e.deltaX; view.oy -= e.deltaY;
+    hideTooltip(); draw();
+  }
+}, { passive: false });
+
+/* Safari pinch */
+let gestureK = 1;
+canvas.addEventListener('gesturestart', e => { e.preventDefault(); gestureK = view.k; });
+canvas.addEventListener('gesturechange', e => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const k2 = clampK(gestureK * e.scale);
+  zoomAt(e.clientX - rect.left, e.clientY - rect.top, k2 / view.k);
+});
+
+/* ---------- tooltip ---------- */
+
+function showTooltip(r, cx, cy){
+  if (dragState || panState) return;
+  const tip = $('tooltip');
+  tip.innerHTML = headers.map(h =>
+    '<div><span class="k">' + escapeHtml(h) + '</span>' + escapeHtml(r[h] || '') + '</div>').join('');
+  tip.style.display = 'block';
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const tw = tip.offsetWidth, th = tip.offsetHeight;
+  tip.style.left = Math.min(cx + 14, vw - tw - 8) + 'px';
+  tip.style.top = Math.min(cy + 14, vh - th - 8) + 'px';
+}
+function hideTooltip(){ $('tooltip').style.display = 'none'; }
+function escapeHtml(s){
+  return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+
+/* ---------- selection / panel ---------- */
+
+function select(id){
+  selId = id;
+  fillPanel();
+  $('panel').classList.add('open');
+}
+function deselect(){ selId = null; closePanel(); }
+function closePanel(){ selId = null; $('panel').classList.remove('open'); draw(); }
+
+function fillPanel(){
+  const r = byId(selId); if (!r) return;
+  $('panelTitle').textContent = r.Tool || '(untitled row)';
+  const wrap = $('panelFields');
+  wrap.innerHTML = '';
+  const xy = document.createElement('div'); xy.className = 'row2';
+  for (const h of headers){
+    const div = document.createElement('div'); div.className = 'field';
+    const lab = document.createElement('label'); lab.textContent = h;
+    let inp;
+    if (h === 'Notes'){ inp = document.createElement('textarea'); }
+    else { inp = document.createElement('input'); inp.type = (h === 'X' || h === 'Y') ? 'number' : 'text'; }
+    if (h === 'X' || h === 'Y'){ inp.step = '0.1'; inp.min = String(FIELD_MIN); inp.max = String(FIELD_MAX); }
+    inp.value = r[h] || '';
+    inp.dataset.col = h;
+    inp.spellcheck = false;
+    inp.addEventListener('input', () => {
+      const row = byId(selId); if (!row) return;
+      row[h] = inp.value;
+      if (h === 'Tool') $('panelTitle').textContent = inp.value || '(untitled row)';
+      if (h === 'Tool' || h === 'X' || h === 'Y' || h === 'Band' || h === 'Provenance') dataRev++;
+      afterMutation(); draw();
+    });
+    inp.addEventListener('change', () => {
+      if (h === 'X' || h === 'Y'){
+        const row = byId(selId), v = parseFloat(inp.value);
+        if (row && !isNaN(v)){ row[h] = fmt1(snap(clampField(v), .1)); inp.value = row[h]; draw(); }
+      }
+      commitHistory();
+    });
+    div.appendChild(lab); div.appendChild(inp);
+    if (h === 'X' || h === 'Y'){ xy.appendChild(div); if (h === 'Y') wrap.appendChild(xy); }
+    else wrap.appendChild(div);
+  }
+}
+function syncPanelXY(r){
+  if (selId !== r._id) return;
+  for (const inp of document.querySelectorAll('#panelFields [data-col]')){
+    if (inp.dataset.col === 'X') inp.value = r.X;
+    if (inp.dataset.col === 'Y') inp.value = r.Y;
+  }
+}
+$('btnClosePanel').addEventListener('click', deselect);
+$('btnDelete').addEventListener('click', () => {
+  const r = byId(selId); if (!r) return;
+  if (!confirm('delete "' + (r.Tool || 'untitled row') + '"?')) return;
+  rows = rows.filter(q => q._id !== r._id);
+  dataRev++;
+  deselect();
+  commitHistory();
+  draw();
+});
+
+/* ---------- keyboard ---------- */
+
+window.addEventListener('keydown', e => {
+  const inField = e.target.closest && e.target.closest('input,textarea,select');
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z'){
+    if (inField) return;
+    e.preventDefault();
+    e.shiftKey ? redo() : undo();
+    return;
+  }
+  if (e.key === 'Escape'){
+    if (inField){ e.target.blur(); if (e.target.id === 'search') clearSearch(); return; }
+    if ($('changes').classList.contains('open')){ $('changes').classList.remove('open'); return; }
+    deselect();
+    return;
+  }
+  if (inField) return;
+  if (e.key === ' '){ spaceHeld = true; canvas.classList.add('panning'); e.preventDefault(); return; }
+  if (selId != null && ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)){
+    e.preventDefault();
+    const r = byId(selId); if (!r) return;
+    const d = e.shiftKey ? .5 : .1;
+    const px = r.X, py = r.Y;
+    let { x, y } = numXY(r);
+    if (isNaN(x)) x = 0; if (isNaN(y)) y = 0;
+    if (e.key === 'ArrowLeft') x -= d;
+    if (e.key === 'ArrowRight') x += d;
+    if (e.key === 'ArrowUp') y += d;
+    if (e.key === 'ArrowDown') y -= d;
+    r.X = fmt1(snap(clampField(x), .1)); r.Y = fmt1(snap(clampField(y), .1));
+    dataRev++;
+    if (!nudgeFlash || nudgeFlash.id !== r._id || performance.now() > nudgeFlash.until)
+      nudgeFlash = { id: r._id, startX: px, startY: py, until: 0 };
+    nudgeFlash.until = performance.now() + 900;
+    setTimeout(draw, 950);
+    syncPanelXY(r);
+    afterMutation();
+    commitHistorySoon();
+    draw();
+  }
+});
+window.addEventListener('keyup', e => {
+  if (e.key === ' '){ spaceHeld = false; canvas.classList.remove('panning'); }
+});
+
+/* ---------- search ---------- */
+
+$('search').addEventListener('input', runSearch);
+$('search').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && searchMatches.length){
+    searchIndex = (searchIndex + 1) % searchMatches.length;
+    focusMatch();
+  }
+});
+function runSearch(){
+  const q = $('search').value.trim().toLowerCase();
+  if (!q){ clearSearch(); return; }
+  searchMatches = rows.filter(r => (r.Tool || '').toLowerCase().includes(q)).map(r => r._id);
+  searchIndex = searchMatches.length ? 0 : -1;
+  $('searchCount').textContent = searchMatches.length
+    ? (searchIndex + 1) + ' of ' + searchMatches.length : 'no match';
+  focusMatch();
+}
+function focusMatch(){
+  if (searchIndex < 0){ draw(); return; }
+  const r = byId(searchMatches[searchIndex]);
+  if (r){
+    const { x, y } = numXY(r);
+    if (!isNaN(x)) centerOn(x, y);
+  }
+  $('searchCount').textContent = (searchIndex + 1) + ' of ' + searchMatches.length;
+}
+function clearSearch(){
+  $('search').value = ''; searchMatches = []; searchIndex = -1;
+  $('searchCount').textContent = '';
+  draw();
+}
+
+/* ---------- status / notice / toast ---------- */
+
+function updateStatus(){
+  $('stRows').textContent = rows.length + ' rows';
+  $('stZoom').textContent = 'zoom ' + (view.k / view.k0).toFixed(2) + 'x';
+}
+function notice(msg){
+  $('noticeText').textContent = msg;
+  $('notice').classList.add('show');
+}
+$('noticeX').addEventListener('click', () => $('notice').classList.remove('show'));
+
+let toastTimer = null;
+function toast(msg, isErr){
+  const t = $('toast');
+  $('toastText').textContent = msg;
+  t.classList.toggle('err', !!isErr);
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  if (!isErr) toastTimer = setTimeout(() => t.classList.remove('show'), 4000);
+}
+$('toastX').addEventListener('click', () => $('toast').classList.remove('show'));
+
+/* ---------- change tracking ---------- */
+
+function writeBaseline(){
+  baseline = { at: new Date().toISOString(), byId: {}, tools: {} };
+  for (const r of rows){
+    baseline.byId[r._id] = headers.map(h => r[h]);
+    baseline.tools[r._id] = r.Tool || 'untitled';
+  }
+  try { localStorage.setItem(LS_BASELINE, JSON.stringify(baseline)); } catch(e){}
+  renderChanges();
+}
+function readBaseline(){
+  try { const s = localStorage.getItem(LS_BASELINE); baseline = s ? JSON.parse(s) : null; }
+  catch(e){ baseline = null; }
+}
+function diffBaseline(){
+  if (!baseline) return { items: [], count: 0 };
+  const xi = headers.indexOf('X'), yi = headers.indexOf('Y');
+  const items = [], seen = new Set();
+  for (const r of rows){
+    seen.add(String(r._id));
+    const b = baseline.byId[r._id];
+    if (!b){ items.push({ id: r._id, tool: r.Tool || 'untitled', desc: 'added' }); continue; }
+    const edited = [];
+    let moved = null;
+    headers.forEach((h, i) => {
+      const was = b[i] == null ? '' : String(b[i]);
+      if (was === String(r[h] == null ? '' : r[h])) return;
+      if (i === xi || i === yi) moved = 'moved ' + b[xi] + ', ' + b[yi] + ' → ' + r.X + ', ' + r.Y;
+      else edited.push(h);
+    });
+    const parts = [];
+    if (moved) parts.push(moved);
+    if (edited.length) parts.push('edited ' + edited.join(', '));
+    if (parts.length) items.push({ id: r._id, tool: r.Tool || 'untitled', desc: parts.join(' · ') });
+  }
+  for (const id in baseline.byId)
+    if (!seen.has(id)) items.push({ id: null, tool: (baseline.tools || {})[id] || 'untitled', desc: 'removed', gone: true });
+  return { items, count: items.length };
+}
+function renderChanges(){
+  const d = diffBaseline();
+  $('btnChanges').textContent = 'Changes' + (d.count ? ' (' + d.count + ')' : '');
+  if (!$('changes').classList.contains('open')) return;
+  $('baseStamp').textContent = baseline ? shortStamp(baseline.at) : '';
+  $('baseCount').textContent = d.count + (d.count === 1 ? ' row' : ' rows');
+  const list = $('changesList');
+  list.innerHTML = '';
+  for (const it of d.items){
+    const div = document.createElement('div');
+    div.className = 'item' + (it.gone ? ' gone' : '');
+    const t = document.createElement('div'); t.className = 'tool'; t.textContent = it.tool;
+    const s = document.createElement('div'); s.textContent = it.desc;
+    div.appendChild(t); div.appendChild(s);
+    if (!it.gone) div.addEventListener('click', () => {
+      const r = byId(it.id);
+      if (r){
+        const { x, y } = numXY(r);
+        if (!isNaN(x)) centerOn(x, y);
+        select(r._id);
+        draw();
+      }
+    });
+    list.appendChild(div);
+  }
+}
+$('btnChanges').addEventListener('click', () => {
+  const c = $('changes');
+  c.classList.toggle('open');
+  if (c.classList.contains('open')) renderChanges();
+});
+$('btnRebase').addEventListener('click', writeBaseline);
+
+/* ---------- export / file load ---------- */
+
+$('btnExport').addEventListener('click', () => {
+  if (!rows.length){ toast('nothing loaded yet', true); return; }
+  const blob = new Blob([serializeCSV()], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'field.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+$('btnOpenFile').addEventListener('click', () => $('fileInput').click());
+$('fileInput').addEventListener('change', () => {
+  const f = $('fileInput').files[0];
+  if (f) f.text().then(t => { loadCSVText(t); writeBaseline(); saveLocal(); finishLoad(null); });
+});
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('drop', e => {
+  e.preventDefault();
+  const f = e.dataTransfer.files[0];
+  if (f && /\.csv$/i.test(f.name)) f.text().then(t => { loadCSVText(t); writeBaseline(); saveLocal(); finishLoad(null); });
+});
+
+/* ---------- boot ---------- */
+
+let fitted = false;
+function fitIfFirst(){ if (!fitted && canvas.clientWidth > 0){ fitView(); fitted = true; } }
+function finishLoad(noticeMsg){
+  $('welcome').classList.remove('show');
+  fitIfFirst();
+  resetHistory();
+  if (noticeMsg){ notice(noticeMsg); restoredFromAutosave = true; }
+  updateStatus();
+  renderChanges();
+  draw();
+}
+
+new ResizeObserver(() => draw()).observe($('canvasWrap'));
+
+(async function boot(){
+  readBaseline();
+  const a = readLocal();
+  if (a && a.rows && a.rows.length){
+    loadFromAutosave(a);
+    if (!baseline) writeBaseline();
+    finishLoad('restored unsaved work · local save ' + shortStamp(a.savedAt));
+    return;
+  }
+  try {
+    const res = await fetch('data/field.csv');
+    if (!res.ok) throw new Error(res.status);
+    loadCSVText(await res.text());
+    writeBaseline();
+    finishLoad(null);
+  } catch(e){
+    $('welcome').classList.add('show');
+  }
+})();
+</script>
+</body>
+</html>
